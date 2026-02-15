@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Auth Challenge Dashboard</title>
+  <style>
+    /* ---------- Theme variables ---------- */
+    :root{
+      --bg: #ffffff;
+      --text: #111111;
+      --muted: rgba(0,0,0,.75);
+      --muted2: rgba(0,0,0,.60);
+      --panel: #fafafa;
+      --border: #e9e9e9;
+      --border2: #dddddd;
+
+      --pill-ok-bg: #f0fff3;
+      --pill-ok-bd: #bfe7c8;
+      --pill-bad-bg: #fff5f5;
+      --pill-bad-bd: #f0b8b8;
+
+      /* Your requested colors */
+      --offline: #d60000; /* red */
+      --online:  #0057ff; /* blue */
+      --battle:  #7a1fff; /* purple */
+    }
+
+    body.dark{
+      --bg: #0f1115;
+      --text: #e9edf2;
+      --muted: rgba(233,237,242,.82);
+      --muted2: rgba(233,237,242,.65);
+      --panel: #141821;
+      --border: #263042;
+      --border2: #2f3b52;
+
+      --pill-ok-bg: rgba(35, 120, 70, .22);
+      --pill-ok-bd: rgba(80, 200, 130, .35);
+      --pill-bad-bg: rgba(170, 40, 40, .18);
+      --pill-bad-bd: rgba(240, 120, 120, .35);
+    }
+
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      margin: 18px;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    h2 { margin: 0; }
+
+    .tagline{
+      font-size: 12px;
+      opacity: .85;
+      margin-top: 4px;
+      color: var(--muted);
+    }
+
+    .row { display:flex; gap:12px; flex-wrap:wrap; align-items:end; }
+    label { display:block; font-size:12px; opacity:.85; margin-bottom:4px; color: var(--muted); }
+    input, button, textarea {
+      font: inherit;
+      padding: 8px 10px;
+      color: var(--text);
+      background: var(--panel);
+      border: 1px solid var(--border2);
+      border-radius: 10px;
+    }
+    input { width: 240px; }
+    textarea { width: min(720px, 100%); height: 110px; }
+    button { cursor:pointer; }
+
+    .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid var(--border2); background: var(--panel); }
+    .ok { background: var(--pill-ok-bg); border-color: var(--pill-ok-bd); }
+    .bad { background: var(--pill-bad-bg); border-color: var(--pill-bad-bd); }
+
+    table { border-collapse:collapse; width:min(980px, 100%); margin-top:14px; }
+    th, td { border-bottom:1px solid var(--border); padding:8px 10px; text-align:left; vertical-align:top; }
+    th { font-size:12px; opacity:.8; color: var(--muted2); }
+
+    .name { font-weight:700; }
+    .offline { color: var(--offline); }
+    .online  { color: var(--online); }
+    .battle  { color: var(--battle); }
+
+    .badge { display:inline-block; font-size:12px; border:1px solid var(--border2); border-radius:999px; padding:1px 8px; margin-left:8px; background: var(--panel); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .sub { font-size:12px; opacity:.85; color: var(--muted); }
+    a { color: inherit; }
+
+    .top-controls{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="header">
+    <div>
+      <h2>Auth Challenge Dashboard</h2>
+      <div class="tagline">by Vegan&lt;Donating2ACE</div>
+      <div class="sub" style="margin-top:6px;">
+        You can find this current month’s "Staff for battle” at https://psrandombattles.weebly.com/auth-challenge.html
+        If you paste their usernames (one name per line) this app will remember it.
+      </div>
+    </div>
+
+    <div class="top-controls">
+      <button id="themeBtn" title="Toggle dark mode">Toggle dark mode</button>
+      <div id="statusPill" class="pill bad">Disconnected</div>
+    </div>
+  </div>
+
+  <div style="margin-top:14px;">
+    <label>Users (one per line)</label>
+    <textarea id="staffBox" class="mono"></textarea>
+    <div class="row" style="margin-top:8px; align-items:center;">
+      <button id="applyStaffBtn">Apply list</button>
+      <span id="staffCount" class="sub"></span>
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:14px;">
+    <div>
+      <label>Poll interval (seconds)</label>
+      <input id="pollSec" value="0.9" class="mono" />
+    </div>
+
+    <div>
+      <button id="connectBtn">Connect</button>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Users</th>
+        <th>Status</th>
+        <th>Battle (if visible)</th>
+        <th>Last update</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+
+<script>
+(() => {
+  // -------------------------------
+  // Dark mode (prefers + toggle)
+  // -------------------------------
+  const THEME_KEY = 'authdash_theme_v1';
+  const themeBtn = document.getElementById('themeBtn');
+
+  function applyTheme(theme) {
+    document.body.classList.remove('dark');
+    if (theme === 'dark') document.body.classList.add('dark');
+    if (theme === 'auto') {
+      const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (prefersDark) document.body.classList.add('dark');
+    }
+  }
+
+  function getSavedTheme() {
+    const saved = localStorage.getItem(THEME_KEY);
+    return saved && ['light','dark','auto'].includes(saved) ? saved : 'auto';
+  }
+
+  function cycleTheme() {
+    const cur = getSavedTheme();
+    const next = (cur === 'auto') ? 'dark' : (cur === 'dark' ? 'light' : 'auto');
+    localStorage.setItem(THEME_KEY, next);
+    applyTheme(next);
+    themeBtn.textContent = next === 'auto' ? 'Toggle dark mode' : `Theme: ${next} (click to change)`;
+  }
+
+  const initialTheme = getSavedTheme();
+  applyTheme(initialTheme);
+  themeBtn.textContent = initialTheme === 'auto' ? 'Toggle dark mode' : `Theme: ${initialTheme} (click to change)`;
+  themeBtn.addEventListener('click', cycleTheme);
+
+  if (window.matchMedia) {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      if (getSavedTheme() === 'auto') applyTheme('auto');
+    });
+  }
+
+  // -------------------------------
+  // App logic
+  // -------------------------------
+  const DEFAULT_STAFF_TEXT =
+`Rage
+35Q71N
+DerpySux
+nat1x
+FreyaknightVGC`;
+
+  const STORAGE_KEY = 'authdash_staff_list_v1';
+
+  const staffBox = document.getElementById('staffBox');
+  const applyStaffBtn = document.getElementById('applyStaffBtn');
+  const staffCount = document.getElementById('staffCount');
+
+  const tbody = document.getElementById('tbody');
+  const statusPill = document.getElementById('statusPill');
+  const connectBtn = document.getElementById('connectBtn');
+  const pollSecEl = document.getElementById('pollSec');
+
+  const toID = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const stripRoomAuthPrefix = (roomid) => (roomid || '').replace(/^[^a-z0-9]+/i, '');
+
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'
+    }[c]));
+  }
+
+  function nowTime(ms) {
+    if (!ms) return '—';
+    const d = new Date(ms);
+    return d.toLocaleTimeString();
+  }
+
+  function setPill(ok, text) {
+    statusPill.className = 'pill ' + (ok ? 'ok' : 'bad');
+    statusPill.textContent = text;
+  }
+
+  function parseStaffText(text) {
+    const raw = String(text || '')
+      .split(/[\n,]+/g)
+      .map(x => x.trim())
+      .filter(Boolean);
+
+    const seen = new Set();
+    const out = [];
+    for (const name of raw) {
+      const id = toID(name);
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      out.push(name);
+    }
+    return out;
+  }
+
+  let STAFF = [];
+  let staffState = new Map();
+  let staffIndex = 0;
+
+  function rebuildStaff(names) {
+    STAFF = names.slice();
+    staffState = new Map();
+    staffIndex = 0;
+
+    for (const name of STAFF) {
+      staffState.set(toID(name), {
+        name,
+        online: false,
+        battleRoomId: null,
+        lastMs: 0
+      });
+    }
+    staffCount.textContent = `${STAFF.length} Users loaded`;
+    render();
+  }
+
+  function render() {
+    const rows = [];
+    for (const [userid, st] of staffState.entries()) {
+      const isOnline = !!st.online;
+      const battleId = st.battleRoomId;
+
+      // precedence: battle (purple) > online (blue) > offline (red)
+      const nameClass = battleId ? 'battle' : (isOnline ? 'online' : 'offline');
+
+      let status = isOnline ? 'Online' : 'Offline';
+      if (isOnline && battleId) status = 'Online (in battle)';
+
+      let battleCell = '—';
+      if (battleId) {
+        const url = `https://play.pokemonshowdown.com/${battleId}`;
+        battleCell = `<a class="mono" href="${url}" target="_blank" rel="noreferrer">${escapeHtml(battleId)}</a>`;
+      }
+
+      rows.push(`
+        <tr>
+          <td class="name ${nameClass}">
+            ${escapeHtml(st.name)}
+            ${battleId ? `<span class="badge">⚔️ In battle</span>` : ``}
+          </td>
+          <td>${escapeHtml(status)}</td>
+          <td>${battleCell}</td>
+          <td class="mono">${escapeHtml(nowTime(st.lastMs))}</td>
+        </tr>
+      `);
+    }
+    tbody.innerHTML = rows.join('');
+  }
+
+  // --- PS WebSocket client
+  let ws = null;
+  let connected = false;
+  let pollTimer = null;
+  let currentRoomCtx = '';
+
+  function send(line) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(line);
+  }
+
+  function startPolling() {
+    stopPolling();
+    const sec = Math.max(0.25, Number(pollSecEl.value) || 0.9);
+    pollTimer = setInterval(() => {
+      if (!connected || STAFF.length === 0) return;
+      const staffName = STAFF[staffIndex % STAFF.length];
+      staffIndex++;
+      send(`|/cmd userdetails ${staffName}`);
+    }, sec * 1000);
+  }
+
+  function stopPolling() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = null;
+  }
+
+  function parsePS(text) {
+    const lines = String(text || '').split('\n');
+    for (const line of lines) {
+      if (!line) continue;
+      if (line.startsWith('>')) { currentRoomCtx = line.slice(1).trim(); continue; }
+      handleLine(currentRoomCtx, line);
+    }
+  }
+
+  function handleLine(room, line) {
+    if (line.startsWith('|challstr|')) {
+      send(`|/trn AuthDash${Math.floor(Math.random()*100000)},0,0`);
+      return;
+    }
+
+    if (line.startsWith('|updateuser|')) {
+      startPolling();
+      render();
+      return;
+    }
+
+    if (line.startsWith('|queryresponse|userdetails|')) {
+      const jsonStr = line.split('|').slice(3).join('|');
+      try {
+        const data = JSON.parse(jsonStr);
+        const userid = toID(data.userid || data.id || data.name);
+        const st = staffState.get(userid);
+        if (!st) return;
+
+        st.lastMs = Date.now();
+        st.online = !!data.rooms && data.rooms !== false;
+        st.battleRoomId = null;
+
+        if (st.online && data.rooms && typeof data.rooms === 'object') {
+          for (const rawRoomid of Object.keys(data.rooms)) {
+            const cleanRoomid = toID(stripRoomAuthPrefix(rawRoomid));
+            if (!st.battleRoomId && cleanRoomid.startsWith('battle')) {
+              st.battleRoomId = stripRoomAuthPrefix(rawRoomid);
+            }
+          }
+        }
+
+        staffState.set(userid, st);
+        render();
+      } catch { /* ignore */ }
+      return;
+    }
+  }
+
+  function connect() {
+    disconnect();
+    setPill(false, 'Connecting…');
+
+    ws = new WebSocket('wss://sim3.psim.us/showdown/websocket');
+
+    ws.onopen = () => { connected = true; setPill(true, 'Connected'); };
+    ws.onclose = () => { connected = false; setPill(false, 'Disconnected'); stopPolling(); };
+    ws.onerror = () => { setPill(false, 'WebSocket error'); };
+    ws.onmessage = (ev) => parsePS(ev.data);
+  }
+
+  function disconnect() {
+    stopPolling();
+    if (ws) { try { ws.close(); } catch {} }
+    ws = null;
+    connected = false;
+    setPill(false, 'Disconnected');
+  }
+
+  connectBtn.addEventListener('click', () => {
+    if (connected) disconnect();
+    else connect();
+    connectBtn.textContent = connected ? 'Connect' : 'Disconnect';
+    setTimeout(() => connectBtn.textContent = connected ? 'Disconnect' : 'Connect', 50);
+  });
+
+  // --- List UI
+  function loadStaffFromStorageOrDefault() {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    staffBox.value = saved && saved.trim() ? saved : DEFAULT_STAFF_TEXT;
+    rebuildStaff(parseStaffText(staffBox.value));
+  }
+
+  applyStaffBtn.addEventListener('click', () => {
+    const names = parseStaffText(staffBox.value);
+    if (names.length === 0) {
+      alert('Please paste at least one username.');
+      return;
+    }
+    localStorage.setItem(STORAGE_KEY, staffBox.value);
+    rebuildStaff(names);
+    if (connected) startPolling();
+  });
+
+  // Init
+  loadStaffFromStorageOrDefault();
+  render();
+})();
+</script>
+</body>
+</html>
